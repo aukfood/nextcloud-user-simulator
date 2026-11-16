@@ -1,0 +1,71 @@
+{
+  "_note": "Pour l'utiliser : cp scenario.example.json scenario.json, puis remplir l'URL et les mots de passe.",
+  "_baseUrl": "Adresse du Nextcloud, sans / final",
+  "baseUrl": "https://<serveur-nextcloud>",
+  "_insecureTls": "false (défaut) = certificat du serveur vérifié, il doit être valide / true = accepte un certificat auto-signé (serveur de test seulement). La variable INSECURE_TLS=1 fait la même chose",
+  "insecureTls": false,
+  "_credentials": "Compte admin (création des users/salons/documents) et mot de passe des comptes de test",
+  "credentials": {
+    "adminUser": "admin",
+    "adminPassword": "<MOT_DE_PASSE_ADMIN>",
+    "userPassword": "<MOT_DE_PASSE_DES_COMPTES_DE_TEST>"
+  },
+  "_scenarioType": "talk = appels seulement / office = édition de documents seulement, sans appel (totalUsers est alors ignoré, garder la ligne; Collabora Office ou Nextcloud Office (Euro-Office)) / mixed = appels + documents en même temps",
+  "scenarioType": "talk",
+  "_totalUsers": "Nombre d'utilisateurs simulés dans l'appel, répartis en alternance entre les salons",
+  "totalUsers": 6,
+  "_rooms": "Nombre de salons Talk créés",
+  "rooms": 1,
+  "_joinIntervalSec": "Secondes entre l'arrivée de deux utilisateurs (montée en charge)",
+  "joinIntervalSec": 5,
+  "_durationSec": "Durée du plateau après l'arrivée du dernier utilisateur (ne concerne que talk et mixed)",
+  "durationSec": 300,
+  "_videoPercent": "% d'utilisateurs avec webcam (0 à 100) DANS CHAQUE SALON, les autres sont en audio seul",
+  "videoPercent": 50,
+  "_audioPercent": "% d'utilisateurs avec un micro actif (0 à 100, défaut 100) DANS CHAQUE SALON. Les autres sont sans micro",
+  "audioPercent": 50,
+  "_forceTurn": "off = libre, udp ou relay = TURN obligatoire (le transport se choisit avec turnTransport)",
+  "forceTurn": "off",
+  "_turnTransport": "Transport vers le TURN: any = tout ce que Talk annonce / udp = turn:...?transport=udp / tcp = turn:...?transport=tcp (TCP simple) / tls = turns: (TLS). Si udp, tcp ou tls: le relais est forcé même si forceTurn vaut off",
+  "turnTransport": "any",
+  "_mediaDir": "Dossier des médias : ./media",
+  "mediaDir": "./media",
+  "metrics": {
+    "_statsIntervalSec": "Relevé des stats WebRTC toutes les N secondes",
+    "statsIntervalSec": 10
+  },
+  "screenShare": {
+    "_doc": "sharers = nombre de partageurs DANS CHAQUE SALON (les premiers du salon: rang 1..N; plafonné à la taille du salon). startAtSec = après la montée en charge. Ignoré si scenarioType = office",
+    "enabled": true,
+    "sharers": 1,
+    "file": "screen1.mp4",
+    "startAtSec": 30,
+    "durationSec": 120
+  },
+  "office": {
+    "_doc": "Utilisé si scenarioType = office ou mixed. documents = nombre de documents créés / editorsPerDocument = éditeurs par document (total = documents x editorsPerDocument) / editorsInCall (mixed seulement) = true: les derniers utilisateurs de l'appel éditent dans un 2e onglet et restent en appel, false: les éditeurs sont des comptes EN PLUS, hors appel / startAtSec = début (après la montée en charge en mixed, dès le départ en office) / durationSec = durée d'édition / joinIntervalSec = délai entre deux éditeurs / folder = dossier de l'admin",
+    "documents": 2,
+    "editorsPerDocument": 3,
+    "editorsInCall": true,
+    "startAtSec": 5,
+    "durationSec": 240,
+    "joinIntervalSec": 1,
+    "folder": "loadtest-docs",
+    "_format": "docx (défaut) = édité par Collabora Office et par Nextcloud Office (Euro-Office) / odt = Collabora Office seulement (Euro-Office n'édite pas l'ODT). Changer l'extension et le contenu des documents créés par setup; l'éditeur est reconnu tout seul",
+    "format": "docx",
+    "_editor": "Contrôle seulement (Nextcloud choisit l'éditeur ouvert): auto = accepte celui qui s'ouvre / collabora = échoue si ce n'est pas Collabora Office / nextcloud-office = échoue si ce n'est pas Nextcloud Office (Euro-Office). Un seul connecteur devrait être activé dans Nextcloud",
+    "editor": "auto"
+  },
+  "setup": {
+    "_roomAccess": "public = salon accessible par lien pour tout utilisateur connecté / invite = salon privé, les utilisateurs de test sont ajoutés comme participants",
+    "roomAccess": "public",
+    "_concurrency": "Nombre de créations ou suppressions d'utilisateurs et de salons faites en parallèle par l'API (5 convient, baisse à 2 si le serveur sature)",
+    "concurrency": 5,
+    "_autoCleanup": "Nettoyage en fin de test par pc1-leader.js. false ou absent = rien n'est supprimé / ifSuccess = supprime seulement si tout s'est bien passé (sinon on garde pour analyser) / true = supprime toujours. Ignoré si USER_FROM/USER_TO ne couvrent pas tous les utilisateurs (second PC).",
+    "autoCleanup": "ifSuccess",
+    "_autoCleanupUsers": "Avec autoCleanup actif: false = supprime les salons et documents mais garde les utilisateurs. Défaut: true",
+    "autoCleanupUsers": true,
+    "_disableFirstRunWizard": "false = ne pas désactiver l'assistant de première connexion de Nextcloud (laisser true ou retirer la ligne sinon)",
+    "disableFirstRunWizard": true
+  }
+}
