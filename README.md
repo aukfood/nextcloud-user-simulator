@@ -2,43 +2,34 @@
 
 L'outil **nextcloud-user-simulator** est un ensemble de scripts [Playwright](https://playwright.dev/) qui simule de vrais utilisateurs [Nextcloud](https://nextcloud.com/) pour mesurer la charge que supportent vos serveurs. Chaque utilisateur simulé est un navigateur [Chromium](https://www.chromium.org/) sans interface graphique (headless) : il se connecte, rejoint un appel [Nextcloud Talk](https://nextcloud.com/talk/) avec une fausse webcam et un faux micro, partage son écran ou édite un document dans [Collabora Office](https://www.collaboraonline.com/) ou Nextcloud Office ([Euro-Office](https://github.com/Euro-Office)). L'outil est développé avec l’aide d’assistants IA.
 
-Le HPB (*High Performance Backend*) est le serveur de signalisation de Talk et ses services associés. TURN (*Traversal Using Relays around NAT*) est le relais qui fait passer l’audio et la vidéo quand une connexion directe est impossible.
+Le HPB (*High Performance Backend*) est le serveur de signalisation de Talk. TURN (*Traversal Using Relays around NAT*) est le relais qui fait passer l’audio et la vidéo quand une connexion directe est impossible.
 
 Installation : [INSTALL.md](INSTALL.md). Dépannage : [TROUBLESHOOT.md](TROUBLESHOOT.md).
 
-## Scénario et comportements : les deux notions à connaître
+## Scénario et comportements
 
-Un test repose sur deux notions.
+**Le scénario** est le fichier `scenario.json` que vous rédigez : instance visée, nombre d’utilisateurs, rythme d’arrivée, durée et rôle de chacun. Un même fichier rejoue le même test, pour comparer deux configurations de serveur. Le champ `scenarioType` vaut `talk` (appels seulement, par défaut), `office` (édition de documents seulement) ou `mixed` (les deux en même temps).
 
-**Le scénario** est le fichier `scenario.json` que vous rédigez. Il décrit toute la campagne : quelle instance viser, combien d’utilisateurs simuler, à quel rythme ils arrivent, combien de temps dure le test et ce que fait chaque groupe d’utilisateurs. Un même fichier rejoue le même test, ce qui permet de comparer deux configurations de serveur. Le champ `scenarioType` choisit le type de campagne :
+**Les comportements** sont les actions de chaque utilisateur simulé. Ils sont écrits dans le code : le scénario décide seulement qui fait quoi et quand.
 
-| `scenarioType` | Ce qui est simulé |
-|---|---|
-| `talk` (défaut) | Des appels Talk seulement : webcam, micro, partage d’écran. |
-| `office` | De l’édition simultanée de documents seulement, sans appel. |
-| `mixed` | Des appels et de l’édition de documents en même temps. |
-
-**Les comportements** sont les actions que réalise chaque utilisateur simulé pendant le test. Ils sont écrits dans le code de l’outil : le scénario ne les programme pas, il décide seulement qui fait quoi et à quel moment.
-
-| Comportement | Ce que fait l’utilisateur simulé | Réglé dans le scénario par |
+| Comportement | Ce que fait l’utilisateur simulé | Réglé par |
 |---|---|---|
-| Rejoindre un appel | Se connecte avec son compte (`user01`, `user02`…), ouvre le salon Talk, clique sur « Démarrer l’appel » ou « Rejoindre l’appel », reste en appel jusqu’à la fin du test, puis clique sur « Quitter l’appel » (jamais « Terminer l’appel pour tous »). | `totalUsers`, `rooms`, `joinIntervalSec`, `durationSec` |
-| Envoyer sa webcam | Envoie en vidéo le contenu d’un fichier `cam1.y4m` à `cam3.y4m`, utilisé comme fausse caméra. | `videoPercent` |
-| Parler au micro | Envoie en audio le contenu d’un fichier `audio1.wav` à `audio3.wav`, utilisé comme faux micro. | `audioPercent` |
-| Partager son écran | Diffuse la vidéo `screen1.mp4` comme un partage d’écran, pendant une fenêtre de temps donnée. | `screenShare` |
-| Éditer un document | Ouvre un document partagé dans Nextcloud, place son curseur dans sa propre zone (un paragraphe par éditeur, pour que les éditeurs ne s’écrasent pas) et y tape en boucle la phrase « Charge de test userNN ». | `office` |
-| Passer par le relais TURN | Oblige les flux audio et vidéo à passer par le serveur TURN, éventuellement avec un transport précis : UDP (*User Datagram Protocol*), TCP (*Transmission Control Protocol*) ou TLS (*Transport Layer Security*). | `forceTurn`, `turnTransport` |
+| Rejoindre un appel | Se connecte (`user01`, `user02`…), rejoint le salon, reste jusqu’à la fin, puis quitte sans terminer l’appel pour tous. | `totalUsers`, `rooms`, `joinIntervalSec`, `durationSec` |
+| Webcam et micro | Envoie une fausse caméra (`cam1.y4m` à `cam3.y4m`) et un faux micro (`audio1.wav` à `audio3.wav`). | `videoPercent`, `audioPercent` |
+| Partager son écran | Diffuse `screen1.mp4` pendant une fenêtre de temps. | `screenShare` |
+| Éditer un document | Tape en boucle « Charge de test userNN » dans son propre paragraphe d’un document partagé. | `office` |
+| Passer par TURN | Force l’audio et la vidéo par le relais TURN, en UDP, TCP ou TLS si besoin. | `forceTurn`, `turnTransport` |
 
-Un utilisateur sans webcam ou sans micro n’envoie vraiment rien sur la piste concernée : l’outil retire cette piste au lieu de laisser Chromium envoyer sa mire de test. La messagerie instantanée de Talk n’est pas simulée, car sa charge est négligeable face aux flux audio et vidéo.
+Un utilisateur sans webcam ou sans micro n’envoie rien sur la piste concernée. La messagerie de Talk n’est pas simulée, car sa charge est négligeable.
 
 ### Déroulé d’un test
 
-1. **Préparation.** Le script `leader.js` crée par l’interface de programmation (API) de Nextcloud les comptes `user01`, `user02`…, les salons Talk `loadtest-<date>-1`, `loadtest-<date>-2`… et, si le scénario prévoit de l’édition, les documents `loadtest-doc-01.docx`… dans le dossier `loadtest-docs` du compte admin, partagés en modification avec leurs éditeurs.
-2. **Montée en charge.** `user01` arrive à l’instant de départ (`START_AT` s’il est défini, sinon tout de suite), puis un nouvel utilisateur toutes les `joinIntervalSec` secondes. Les utilisateurs sont répartis en alternance entre les salons (`user01` dans le salon 1, `user02` dans le salon 2, etc.).
-3. **Plateau.** Il commence à l’arrivée du dernier utilisateur (ligne `PHASE steady` du journal) et dure `durationSec` secondes. Le partage d’écran et l’édition démarrent `startAtSec` secondes après le début du plateau. En scénario `office`, il n’y a pas d’appel : l’édition démarre `office.startAtSec` secondes après l’instant de départ.
-4. **Fin.** Chaque utilisateur quitte l’appel, les navigateurs sont fermés, puis le nettoyage est fait si `setup.autoCleanup` le demande.
+1. **Préparation.** `leader.js` crée par l’API de Nextcloud les comptes `user01`…, les salons `loadtest-<date>-1`… et, si besoin, les documents `loadtest-doc-01.docx`… dans le dossier `loadtest-docs` du compte admin.
+2. **Montée en charge.** `user01` arrive au départ (`START_AT` ou tout de suite), puis un utilisateur toutes les `joinIntervalSec` secondes, en alternance entre les salons.
+3. **Plateau.** Il commence à l’arrivée du dernier utilisateur (`PHASE steady` dans le journal) et dure `durationSec` secondes. Le partage d’écran et l’édition démarrent `startAtSec` secondes après son début (en `office`, après le départ).
+4. **Fin.** Chaque utilisateur quitte l’appel, puis le nettoyage est fait si `setup.autoCleanup` le demande.
 
-Pendant tout le test, l’outil relève les statistiques WebRTC (*Web Real-Time Communication*, la technologie des appels dans le navigateur) de chaque utilisateur et la charge du PC qui lance les navigateurs.
+Pendant le test, l’outil relève les statistiques WebRTC de chaque utilisateur et la charge du PC de test.
 
 ### Exemple de scénario commenté
 
@@ -142,17 +133,13 @@ Avec ce scénario, les fichiers média exigés sont `cam1.y4m` à `cam3.y4m`, `a
 
 ## Prérequis
 
-- Une instance Nextcloud avec Talk, un HPB et un serveur TURN configurés comme en conditions réelles, et un serveur d’édition (Collabora Office ou Nextcloud Office (Euro-Office)) si vous testez l’édition. Un seul connecteur d’édition doit être actif.
-- Une instance de test dédiée, de préférence. Un essai sur une instance de production demande une autorisation claire et des ressources réservées.
-- Un compte admin Nextcloud : l’outil crée et supprime des comptes, des salons et des documents par l’API.
-- Aucun compte réel nommé `user` suivi de chiffres : le nettoyage par défaut supprime **tous** ces comptes.
-- Un ou plusieurs PC ou machines virtuelles Linux (par exemple Debian 13) pour lancer les navigateurs.
-- [Node.js](https://nodejs.org/) 20 ou plus, Playwright et son Chromium, [ffmpeg](https://ffmpeg.org/) pour créer les fichiers média.
-- [Grafana](https://grafana.com/) : optionnel.
+- Une instance Nextcloud de test avec Talk, un HPB et un serveur TURN, et un serveur d’édition (Collabora Office ou Nextcloud Office (Euro-Office)) si vous testez l’édition, avec un seul connecteur d’édition actif. Sur une instance de production, il faut une autorisation claire et des ressources réservées.
+- Un compte admin Nextcloud, et aucun compte réel nommé `user` suivi de chiffres : le nettoyage par défaut supprime **tous** ces comptes.
+- Un ou plusieurs PC ou machines virtuelles Linux (par exemple Debian 13), avec [Node.js](https://nodejs.org/) 20 ou plus, Playwright et son Chromium, et [ffmpeg](https://ffmpeg.org/) pour créer les médias. [Grafana](https://grafana.com/) est optionnel.
 
 ## Installation rapide
 
-Le détail (Node.js, Chromium, médias) est dans [INSTALL.md](INSTALL.md).
+Le détail est dans [INSTALL.md](INSTALL.md).
 
 ```bash
 git clone https://github.com/aukfood/nextcloud-user-simulator.git
@@ -162,133 +149,89 @@ npx playwright install chromium
 cp scenario.example.json scenario.json
 ```
 
-Renseignez ensuite `scenario.json` (URL, mots de passe, scénario) et créez les fichiers média du dossier `media/` (commandes `ffmpeg` dans [INSTALL.md](INSTALL.md)). Les fichiers `scenario.json` et `.env` et les dossiers `media/`, `logs/` et `artifacts/` sont exclus de git par `.gitignore`.
+Renseignez `scenario.json` et créez les médias du dossier `media/` (commandes `ffmpeg` dans [INSTALL.md](INSTALL.md)). `scenario.json`, `.env`, `media/`, `logs/` et `artifacts/` sont exclus de git.
 
 ## Utilisation
-
-Pour lancer un test depuis un seul PC :
 
 ```bash
 node leader.js scenario.json
 ```
 
-Le leader prépare l’instance, lance les utilisateurs, affiche un bilan, puis nettoie si `setup.autoCleanup` le demande. Pour un premier essai, gardez `"autoCleanup": false` afin de pouvoir examiner comptes et salons. Un `Ctrl+C` fait quitter l’appel proprement à chaque utilisateur avant de fermer les navigateurs. Pour répartir les utilisateurs sur plusieurs PC, voir « Plusieurs PC ».
-
-### Les scripts
+Le leader prépare l’instance, lance les utilisateurs, affiche un bilan, puis nettoie si `setup.autoCleanup` le demande. Pour un premier essai, gardez `"autoCleanup": false`. Un `Ctrl+C` fait quitter l’appel proprement à chacun.
 
 | Script | Rôle |
 |---|---|
-| `leader.js` | Prépare l’instance (comptes, salons, documents), écrit `logs/rooms.json` et `logs/docs.json`, puis lance les utilisateurs de sa plage. |
-| `follower.js` | Sur un PC supplémentaire : ne crée rien, lit les salons préparés par le leader et lance sa plage d’utilisateurs. |
-| `conductor.sh` | Depuis le PC leader : lance une campagne sur plusieurs PC (copie des fichiers, départ commun, récupération des journaux). |
-| `setup.js` | Prépare l’instance comme le leader, sans lancer de test. |
-| `cleanup.js` | Supprime salons, comptes et documents de test (voir « Nettoyage »). |
+| `leader.js` | Prépare l’instance, écrit `logs/rooms.json` et `logs/docs.json`, puis lance sa plage d’utilisateurs. |
+| `follower.js` | Sur un PC supplémentaire : lit les salons préparés par le leader et lance sa plage. |
+| `conductor.sh` | Depuis le PC leader : lance une campagne sur plusieurs PC. |
+| `setup.js` | Prépare l’instance sans lancer de test. |
+| `cleanup.js` | Supprime salons, comptes et documents de test. |
 
 ### Variables d’environnement (optionnelles)
 
 | Variable | Rôle |
 |---|---|
-| `NC_ADMIN_USER`, `NC_ADMIN_PASSWORD`, `NC_PASSWORD` | Remplacent les valeurs du bloc `credentials`. Utile pour ne pas écrire les mots de passe dans `scenario.json`. |
-| `START_AT` | Instant d’arrivée de `user01`, avec le fuseau horaire, par exemple `2026-11-10T15:00:00+01:00`. Sans fuseau, l’heure est lue en heure locale du PC. |
-| `USER_FROM`, `USER_TO` | Plage d’utilisateurs lancée par ce PC (défaut : 1 à `totalUsers`). |
-| `EDITOR_FROM`, `EDITOR_TO` | Plage de numéros de comptes des éditeurs hors appel lancés par ce PC. |
-| `ROOMS_URLS` | Follower seulement : URL des salons séparées par des virgules, à la place de `logs/rooms.json`. |
-| `INSECURE_TLS` | `1` accepte un certificat auto-signé, `0` force la vérification. Passe avant `insecureTls` du scénario. |
-| `RUN_ID` | Impose l’identifiant du run, utilisé dans le nom des fichiers de `logs/`. |
-| `GRAFANA_URL`, `GRAFANA_TOKEN` | Envoi d’annotations à Grafana (voir plus bas). |
+| `NC_ADMIN_USER`, `NC_ADMIN_PASSWORD`, `NC_PASSWORD` | Remplacent le bloc `credentials`, pour ne pas écrire les mots de passe dans `scenario.json`. |
+| `START_AT` | Instant d’arrivée de `user01`, avec fuseau, par exemple `2026-11-10T15:00:00+01:00`. |
+| `USER_FROM`, `USER_TO` | Plage d’utilisateurs lancée par ce PC. |
+| `EDITOR_FROM`, `EDITOR_TO` | Plage des éditeurs hors appel lancés par ce PC. |
+| `ROOMS_URLS` | Follower : URL des salons, à la place de `logs/rooms.json`. |
+| `INSECURE_TLS` | `1` accepte un certificat auto-signé. Passe avant `insecureTls`. |
+| `RUN_ID` | Impose l’identifiant du run. |
+| `GRAFANA_URL`, `GRAFANA_TOKEN` | Annotations Grafana. |
 
-Les scripts ne lisent pas le fichier `.env` tout seuls. Chargez-le dans le terminal avant le lancement :
-
-```bash
-cat > .env << 'ENVEOF'
-GRAFANA_URL="https://<SERVEUR_GRAFANA>"
-GRAFANA_TOKEN="<JETON_GRAFANA>"
-ENVEOF
-
-set -a; source .env; set +a
-```
-
-`conductor.sh` charge `.env` tout seul, s’il est présent.
+Pour charger un fichier `.env` : `set -a; source .env; set +a`. `conductor.sh` le charge tout seul.
 
 ## Plusieurs PC
 
-Un seul PC suffit tant qu’il ne sature pas. Si le journal affiche `ATTENTION: PC de test saturé`, répartissez les utilisateurs sur un PC supplémentaire, sinon les mesures côté serveur sont faussées.
+Si le journal affiche `ATTENTION: PC de test saturé`, répartissez les utilisateurs sur un PC supplémentaire. Chaque PC, leader et followers, doit avoir une installation fonctionnelle du projet (prérequis, dépendances et `git clone`, voir [INSTALL.md](INSTALL.md)) et une horloge synchronisée par NTP.
 
-Sur chaque PC : même version de l’outil, mêmes fichiers média, même `scenario.json`, horloge synchronisée par NTP (*Network Time Protocol*) et même `START_AT`.
+### Avec `conductor.sh`
 
-### Méthode simple : `conductor.sh`
-
-Depuis le PC leader, une seule commande prépare le test, copie les fichiers sur le ou les PC followers, lance tout le monde à la même heure, puis rapatrie les journaux. Le projet et rsync doivent déjà être installés sur chaque PC (voir [INSTALL.md](INSTALL.md)).
-
-Une seule fois, sur le PC leader, installez l’accès SSH par clé vers chaque PC follower :
+Une seule fois, sur le PC leader :
 
 ```bash
-ssh-keygen                                 # seulement si le PC leader n’a pas encore de clé
-ssh-copy-id <UTILISATEUR>@<PC_FOLLOWER>    # à refaire pour chaque PC follower
-```
-
-Puis décrivez les PC dans `conductor.conf` :
-
-```bash
+ssh-keygen                                 # si le PC leader n’a pas encore de clé
+ssh-copy-id <UTILISATEUR>@<PC_FOLLOWER>    # pour chaque PC follower
 cp conductor.example.conf conductor.conf
 ```
 
-C’est `scenario.json` qui décide du test (type, nombre d’utilisateurs, éditeurs). Adaptez `conductor.conf` en conséquence : il indique seulement quel PC lance quelle partie. Des exemples selon le type de scénario figurent dans `conductor.example.conf`.
-
-Une ligne par PC : la machine (`leader` pour le PC leader), le dossier du projet, puis la plage d’utilisateurs. Exemple pour 4 utilisateurs :
+`conductor.conf` indique quel PC lance quelle partie du test décrit par `scenario.json` : une ligne par PC avec la machine (`leader` pour le PC leader), le dossier du projet et la plage d’utilisateurs. `conductor.example.conf` donne un exemple par type de scénario.
 
 ```
 leader                        -                          1 2
 <UTILISATEUR>@<PC_FOLLOWER>   nextcloud-user-simulator   3 4
 ```
 
-Lancez la campagne :
-
 ```bash
-./conductor.sh --dry-run    # affiche ce qui serait fait, sans rien lancer
-./conductor.sh              # lance la campagne (départ dans environ 3 minutes)
-./conductor.sh --delay 240  # départ dans 4 minutes
+./conductor.sh --dry-run                              # affiche ce qui serait fait
+./conductor.sh                                        # départ dans environ 3 minutes
+./conductor.sh --delay 240                            # départ dans 4 minutes
+./conductor.sh --start-at 2026-11-20T15:00:00+01:00   # heure fixe, fuseau obligatoire
 ```
 
-Pour un départ à une heure fixe (par exemple pour qu’un collègue observe Grafana à une heure convenue) :
+Le script vérifie les PC, copie `scenario.json`, `.env` et les fichiers de `logs/`, lance tout le monde au même instant, puis rapatrie les journaux dans `logs/<pc>/`. Options utiles :
+
+- `--media` copie les médias : nécessaire la première fois, sinon le script s’arrête.
+- `--update` aligne le projet des followers sur le dépôt git, même après une copie manuelle. Le PC leader se met à jour à la main (`git pull`).
+- `--no-cleanup` garde les données, même si `setup.autoCleanup` demande le nettoyage.
+
+Codes de fin : 0 (complet), 2 (incomplet), 1 (erreur). Aide : `./conductor.sh --help`.
+
+### Sans `conductor.sh`
+
+Lancez le leader 2 à 3 minutes avant `START_AT`, copiez `logs/rooms.json` (et `logs/docs.json`) sur chaque follower dès qu’il est écrit, puis lancez les followers avec le même `START_AT` et des plages qui ne se chevauchent pas :
 
 ```bash
-./conductor.sh --start-at 2026-11-20T15:00:00+01:00   # fuseau obligatoire
+START_AT="2026-11-10T15:00:00+01:00" USER_FROM=1 USER_TO=2 node leader.js scenario.json     # PC leader
+START_AT="2026-11-10T15:00:00+01:00" USER_FROM=3 USER_TO=4 node follower.js scenario.json   # PC follower
 ```
 
-Le script vérifie chaque PC, copie `scenario.json`, `.env` et `logs/rooms.json`, fixe un départ commun, puis récupère les journaux du ou des PC followers dans `logs/<pc>/`. Le journal de chaque follower distant est `logs/conductor-follower.out` sur son PC. Ajoutez `--media` pour copier aussi le dossier des médias : c’est nécessaire la première fois, car si les médias manquent ou diffèrent sur un PC, le script s’arrête avant de lancer quoi que ce soit. Ajoutez `--update` pour mettre d’abord à jour le projet sur le ou les PC followers (`git pull`, avec l’utilisateur SSH de `conductor.conf`, jamais en root) ; mettez à jour le PC leader vous-même avant. À la fin, le script nettoie comme `leader.js`, selon `setup.autoCleanup` (avec `"ifSuccess"`, seulement si le test est complet sur tous les PC) ; ajoutez `--no-cleanup` pour garder les données. Les codes de fin sont 0 (complet), 2 (incomplet) et 1 (erreur). Un `Ctrl+C` arrête tout, sans nettoyage. Aide : `./conductor.sh --help`.
-
-### Méthode manuelle
-
-Exemple avec 4 utilisateurs répartis sur deux PC. Remplacez l'horaire par un instant futur et lancez le leader 2 à 3 minutes avant `START_AT`, le temps de créer comptes et salons :
-
-```bash
-# PC leader : prépare l'instance, puis lance user01 et user02
-START_AT="2026-11-10T15:00:00+01:00" USER_FROM=1 USER_TO=2 node leader.js scenario.json
-```
-
-Dès que le journal du leader affiche `logs/rooms.json écrit`, copiez ce fichier (et `logs/docs.json` s’il existe) sur chaque PC follower :
-
-```bash
-ssh <UTILISATEUR>@<PC_FOLLOWER> "mkdir -p nextcloud-user-simulator/logs"
-scp logs/rooms.json <UTILISATEUR>@<PC_FOLLOWER>:nextcloud-user-simulator/logs/
-# Si le scénario comporte de l'édition :
-scp logs/docs.json <UTILISATEUR>@<PC_FOLLOWER>:nextcloud-user-simulator/logs/
-```
-
-```bash
-# PC follower : même START_AT, plage complémentaire
-START_AT="2026-11-10T15:00:00+01:00" USER_FROM=3 USER_TO=4 node follower.js scenario.json
-```
-
-Règles à respecter :
-
-- Les plages `USER_*` et `EDITOR_*` des différents PC ne doivent pas se chevaucher. Le follower exige `USER_FROM`, sauf en scénario `office`.
-- Avec `editorsInCall: true`, les éditeurs font partie des utilisateurs de l’appel : ils suivent `USER_*`. Avec des éditeurs hors appel, répartissez-les avec `EDITOR_FROM` et `EDITOR_TO`. Sans ces variables, c’est le PC qui lance le dernier utilisateur de l’appel qui prend tous les éditeurs.
-- En scénario `office`, le follower n’a pas besoin de `rooms.json`, mais il exige `EDITOR_FROM` ou `EDITOR_TO`. Le fichier `logs/docs.json` est optionnel : sans lui, le document est ouvert par un clic dans la liste des fichiers.
-- Le nettoyage automatique du leader est ignoré dès qu’il ne lance qu’une partie des utilisateurs ou que `EDITOR_*` est défini : lancez `cleanup.js` à la fin. Ne relancez pas le leader en cours de test : il créerait d’autres salons et écraserait `rooms.json`.
+Le nettoyage automatique est alors ignoré : lancez `cleanup.js` à la fin. Les règles sur les éditeurs sont dans [TROUBLESHOOT.md](TROUBLESHOOT.md).
 
 ## Après un test
+
+Les journaux sont dans `logs/`, les captures dans `artifacts/`. Les noms contiennent le nom du PC (ici `pclinux`) et l’identifiant du run.
 
 Les journaux et mesures sont dans `logs/`, les captures d’écran dans `artifacts/`. Les noms de fichiers contiennent le nom du PC (ici `pclinux`) et l’identifiant du run.
 
@@ -299,38 +242,27 @@ Les journaux et mesures sont dans `logs/`, les captures d’écran dans `artifac
 | `stats-pclinux-<runId>.jsonl` | Statistiques WebRTC de chaque utilisateur (débits, pertes, gigue, images, type de connexion). |
 | `client-pclinux-<runId>.jsonl` | Occupation du processeur (CPU), mémoire libre et charge du PC de test. |
 | `run-pclinux-<runId>.json` | Réglages du run. **Attention : il contient la totalité de `scenario.json`, mots de passe compris.** |
-| `rooms.json`, `docs.json` | Salons et documents créés, à copier sur les autres PC. |
-| `artifacts/*.png` | Captures prises lors d’un échec ou pour contrôle (par exemple `fail-user03.png`, `office-user05-edition.png`). |
-
-### Nettoyage
 
 ```bash
 node cleanup.js scenario.json                 # TOUS les salons loadtest-*, TOUS les comptes userNN, le dossier de documents
-node cleanup.js scenario.json --current-only  # seulement les salons de logs/rooms.json et les comptes de ce scénario
-node cleanup.js scenario.json --rooms-only    # salons et documents, garde les comptes
-node cleanup.js scenario.json --users-only    # comptes seulement, garde salons et documents
+node cleanup.js scenario.json --current-only  # seulement ce qui a été créé pour ce scénario
+node cleanup.js scenario.json --rooms-only    # garde les comptes
+node cleanup.js scenario.json --users-only    # garde salons et documents
 ```
 
-Par défaut, le nettoyage n’est pas limité au dernier test : il supprime tous les comptes `user` suivi de chiffres, même s’ils n’ont pas été créés par l’outil.
-
-### Grafana (optionnel)
-
-Avec `GRAFANA_URL` et `GRAFANA_TOKEN` (jeton de service autorisé à écrire des annotations), chaque phase du test apparaît comme une annotation sur les graphiques, avec l’étiquette `nextcloud-user-simulator`. Un échec d’annotation n’arrête pas le test.
-
-Le tableau de bord d’exemple `grafana/dashboard-nextcloud-user-simulator.json` attend une source de données [Prometheus](https://prometheus.io/) avec les métriques de node_exporter (étiquette `vm`), des métriques de conteneurs au format cAdvisor et les métriques du serveur TURN eturnal. Adaptez les requêtes à votre supervision.
+Avec Grafana (`GRAFANA_URL` et `GRAFANA_TOKEN`), chaque phase du test apparaît comme une annotation `nextcloud-user-simulator`. Le tableau de bord d’exemple `grafana/dashboard-nextcloud-user-simulator.json` attend [Prometheus](https://prometheus.io/) avec node_exporter (étiquette `vm`), cAdvisor et eturnal : adaptez les requêtes à votre supervision.
 
 ## Limites
 
-- **Chaque utilisateur simulé est un Chromium complet** qui tourne sur le PC de test (l’injecteur). C’est ce qui rend la charge réaliste, mais l’injecteur sature vite.
-- **Seuil de 85 % de CPU.** Au-delà, l’outil écrit `ATTENTION: PC de test saturé` dans le journal : les mesures côté serveur ne sont plus fiables. Réduisez le nombre d’utilisateurs ou ajoutez un PC.
-- **Mesurer par paliers pour extrapoler.** Plutôt que de multiplier les PC, lancez le même scénario avec un nombre croissant d’utilisateurs (par exemple 2, 4, 6 puis 8) et relevez la charge des serveurs sur le plateau de chaque palier. Si elle augmente de façon linéaire, ces mesures à petite échelle suffisent pour extrapoler le dimensionnement d’une instance plus grande.
-- **Interface en français ou en anglais.** L’outil retrouve les boutons de Talk et des éditeurs par leurs libellés français ou anglais. Une autre langue, ou une nouvelle version de Talk, Collabora Office ou Euro-Office qui change ces libellés, peut casser un comportement. Les sélecteurs sont regroupés dans `lib/common.js` (objet `SEL`).
-- **Certificats vérifiés par défaut.** Le serveur Nextcloud, et Grafana si `GRAFANA_URL` est utilisé, doivent présenter un certificat valide. Pour un labo en certificat auto-signé, mettez `"insecureTls": true` dans `scenario.json` ou lancez avec `INSECURE_TLS=1` : la vérification est alors désactivée pour tout le processus et le journal l’indique au démarrage. À réserver à des instances de test.
-- **Pas de garantie de capacité.** Les résultats dépendent de votre matériel, de votre réseau et de vos médias. Pour comparer deux tests, gardez les mêmes fichiers média et le même scénario.
+- **Chaque utilisateur simulé est un Chromium complet** : la charge est réaliste, mais le PC de test sature vite. Au-delà de 85 % de CPU, l’outil écrit `ATTENTION: PC de test saturé` et les mesures côté serveur ne sont plus fiables.
+- **Mesurer par paliers.** Lancez le même scénario avec 2, 4, 6 puis 8 utilisateurs : si la charge des serveurs augmente de façon linéaire, ces mesures suffisent pour extrapoler.
+- **Interface en français ou en anglais.** Les boutons sont retrouvés par leurs libellés : une autre langue ou une nouvelle version de Talk ou des éditeurs peut casser un comportement. Les sélecteurs sont dans `lib/common.js` (objet `SEL`).
+- **Certificats vérifiés par défaut.** Pour un certificat auto-signé, utilisez `"insecureTls": true` ou `INSECURE_TLS=1`, sur une instance de test seulement.
+- **Pas de garantie de capacité.** Pour comparer deux tests, gardez les mêmes médias et le même scénario.
 
 ## Signaler un bug ou contribuer
 
-En cas de problème, consultez d’abord [TROUBLESHOOT.md](TROUBLESHOOT.md). Pour signaler un bug, proposer une amélioration ou une modification, merci d'ouvrir un [ticket](https://github.com/aukfood/nextcloud-user-simulator/issues).
+En cas de problème, consultez d’abord [TROUBLESHOOT.md](TROUBLESHOOT.md). Pour signaler un bug ou proposer une amélioration, ouvrez un [ticket](https://github.com/aukfood/nextcloud-user-simulator/issues).
 
 ## Licence
 

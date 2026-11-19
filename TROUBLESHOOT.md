@@ -44,6 +44,13 @@ Ouvrez le dernier journal dans `logs/`, cherchez la **première** ligne `ERREUR`
 | `ERREUR: aucune URL de salon` ou `ERREUR: salon injoignable après 120 s` | `logs/rooms.json` absent ou périmé sur le follower (leader relancé depuis). | Copier le `rooms.json` du dernier lancement du leader. Voir les lignes `DIAGNOSTIC` et `artifacts/follower-salon-injoignable.png`. Avec `conductor.sh`, le script copie `rooms.json` tout seul. |
 | Les PC ne démarrent pas ensemble, ou utilisateurs en double | `START_AT` absent ou sans fuseau, horloges non synchronisées, plages `USER_*` / `EDITOR_*` qui se chevauchent. | Même `START_AT` avec fuseau partout, horloges synchronisées par NTP, plages complémentaires. Avec `conductor.sh`, le départ est donné par `--delay` (défaut 180 s) ou, pour une heure convenue, par `--start-at` avec le fuseau. |
 
+### Lancement manuel sur plusieurs PC : règles
+
+- Les plages `USER_*` et `EDITOR_*` des différents PC ne doivent pas se chevaucher. Le follower exige `USER_FROM`, sauf en scénario `office`.
+- Avec `editorsInCall: true`, les éditeurs font partie de l’appel : ils suivent `USER_*`. Avec des éditeurs hors appel, les répartir avec `EDITOR_FROM` et `EDITOR_TO`. Sans ces variables, le PC qui lance le dernier utilisateur de l’appel prend tous les éditeurs.
+- En scénario `office`, le follower n’a pas besoin de `rooms.json`, mais exige `EDITOR_FROM` ou `EDITOR_TO`. Sans `logs/docs.json`, le document est ouvert par un clic dans la liste des fichiers.
+- Ne pas relancer le leader en cours de test : il créerait d’autres salons et écraserait `rooms.json`.
+
 ## Charge du PC de test et nettoyage
 
 | Symptôme | Cause | Solution |

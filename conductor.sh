@@ -37,7 +37,7 @@ Options :
       --start-at DATE     cas particulier : départ à une heure fixe, avec fuseau
                           (ex. 2026-11-20T15:00:00+01:00) ; prioritaire sur --delay
       --media             copier aussi le dossier des médias (nécessaire s'ils manquent ou diffèrent)
-      --update            mettre à jour le projet des PC distants (git pull --ff-only)
+      --update            aligner le projet des PC distants sur le dépôt git
                           avec l'utilisateur SSH de conductor.conf (jamais root).
                           Le PC leader n'est pas mis à jour : y faire git pull à la main avant.
       --no-cleanup        ne pas nettoyer à la fin, même si setup.autoCleanup le demande
@@ -247,7 +247,8 @@ for i in "${!CIBLES[@]}"; do
   }
   val() { sed -n "s/^$1=//p" <<< "$rapport"; }
   v_node="$(val node)"; (( ${v_node:-0} >= 20 )) || fatal "$nom : Node.js 20 ou plus introuvable sur $cible (voir INSTALL.md)"
-  [[ "$(val projet)" == 1 ]] || fatal "$nom : follower.js absent de ${DOSSIERS[$i]} sur $cible"
+  # Avec --update, follower.js peut n'arriver qu'avec la mise à jour : il est vérifié après.
+  (( MAJ )) || [[ "$(val projet)" == 1 ]] || fatal "$nom : follower.js absent de ${DOSSIERS[$i]} sur $cible"
   [[ "$(val dependances)" == 1 ]] || fatal "$nom : dépendances absentes sur $cible. Y lancer : npm ci && npx playwright install chromium"
   [[ "$(val rsync)" == 1 ]] || fatal "$nom : rsync introuvable sur $cible. L'installer : sudo apt install rsync"
   [[ "$(val setsid)" == 1 ]] || fatal "$nom : commande setsid absente sur $cible (paquet util-linux)"
@@ -270,51 +271,41 @@ GIT_SANS_QUESTION='export GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMod
 masquer_url() { sed -E 's#(://)[^/@[:space:]]+@#\1***@#g'; }
 
 if (( MAJ )); then
-  info "Mise à jour du projet sur les PC distants (git pull --ff-only)..."
-  # 1) Vérifier TOUS les PC avant de mettre à jour le moindre d'entre eux.
+  info "Mise à jour du projet sur les PC distants (alignement sur le dépôt git)..."
+  # Les followers ne font qu'exécuter : les fichiers suivis par git sont alignés sur le dépôt,
+  # même modifiés ou recopiés à la main. scenario.json, .env, logs/ et media/ (ignorés par git) restent.
   for i in "${!CIBLES[@]}"; do
     (( i == LOCAL_IDX )) && continue
     nom="${NOMS[$i]}"; cible="${CIBLES[$i]}"
-    verif='command -v git >/dev/null || exit 12
+    maj="${GIT_SANS_QUESTION}"'command -v git >/dev/null || exit 12
       git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 10
-      modifs="$(git status --porcelain)"; [ -z "$modifs" ] || { printf "%s\n" "$modifs" | head -5; exit 11; }'
-    if (( DRY_RUN )); then distant "$i" "git status --porcelain"; continue; fi
-    rc=0; sortie="$(distant "$i" "$verif" 2>&1)" || rc=$?
-    case "$rc" in
-      0)  ;;
-      10) fatal "$nom : ${DOSSIERS[$i]} n'est pas un dépôt git sur $cible. Le réinstaller avec git clone (voir INSTALL.md) ou lancer sans --update. Rien n'a été lancé." ;;
-      11) fatal "$nom : modifications locales dans ${DOSSIERS[$i]} sur $cible :
-$sortie
-Les enregistrer ou les annuler sur ce PC (git status), puis relancer. Rien n'a été lancé." ;;
-      12) fatal "$nom : git introuvable sur $cible. Rien n'a été lancé." ;;
-      *)  fatal "$nom : vérification git impossible sur $cible (code $rc). Rien n'a été lancé." ;;
-    esac
-  done
-  # 2) Mettre à jour chaque PC, puis comparer l'empreinte des scripts (même appel SSH).
-  for i in "${!CIBLES[@]}"; do
-    (( i == LOCAL_IDX )) && continue
-    nom="${NOMS[$i]}"; cible="${CIBLES[$i]}"
-    maj="${GIT_SANS_QUESTION}"'avant="$(git rev-parse HEAD)"
-      git pull --ff-only -q 2>&1 || exit 13
+      avant="$(git rev-parse HEAD)"
+      git fetch -q 2>&1 || exit 13
+      git reset -q --hard "@{upstream}" 2>&1 || exit 13
       apres="$(git rev-parse HEAD)"
       if [ "$avant" = "$apres" ]; then echo "etat=a_jour"; else
         echo "etat=mis_a_jour $(git rev-parse --short "$avant")..$(git rev-parse --short "$apres")"
         git diff --name-only "$avant" "$apres" -- package.json package-lock.json | sed "s/^/paquet=/"
       fi
+      echo "projet=$( [ -f follower.js ] && echo 1 || echo 0)"
       echo "empreinte=$(cat leader.js follower.js lib/*.js 2>/dev/null | md5sum | cut -d" " -f1)"'
-    if (( DRY_RUN )); then distant "$i" "git pull --ff-only"; continue; fi
+    if (( DRY_RUN )); then distant "$i" "git fetch && git reset --hard @{upstream}"; continue; fi
     rc=0; sortie="$(distant "$i" "$maj" 2>&1)" || rc=$?
-    if (( rc != 0 )); then
-      fatal "$nom : git pull --ff-only en échec sur $cible (réseau, conflit ou historique divergent) :
+    case "$rc" in
+      0)  ;;
+      10) fatal "$nom : ${DOSSIERS[$i]} n'est pas un dépôt git sur $cible. Le réinstaller avec git clone (voir INSTALL.md) ou lancer sans --update. Rien n'a été lancé." ;;
+      12) fatal "$nom : git introuvable sur $cible. Rien n'a été lancé." ;;
+      *)  fatal "$nom : mise à jour git en échec sur $cible (réseau ou accès au dépôt) :
 $(printf '%s\n' "$sortie" | masquer_url | tail -5)
-Corriger sur ce PC (cd ${DOSSIERS[$i]} && git pull --ff-only), puis relancer. Rien n'a été lancé."
-    fi
+Vérifier sur ce PC (cd ${DOSSIERS[$i]} && git fetch), puis relancer. Rien n'a été lancé." ;;
+    esac
     etat="$(sed -n 's/^etat=//p' <<< "$sortie")"
     if [[ "$etat" == a_jour ]]; then info "  $nom : déjà à jour"
     else info "  $nom : mis à jour (${etat#mis_a_jour })"; fi
     if grep -q '^paquet=' <<< "$sortie"; then
       warn "$nom : dépendances modifiées ($(sed -n 's/^paquet=//p' <<< "$sortie" | paste -sd' ' -)). Lancer sur ce PC : cd ${DOSSIERS[$i]} && npm ci"
     fi
+    [[ "$(sed -n 's/^projet=//p' <<< "$sortie")" == 1 ]] || fatal "$nom : follower.js absent de ${DOSSIERS[$i]} sur $cible, même après la mise à jour. Rien n'a été lancé."
     empreinte="$(sed -n 's/^empreinte=//p' <<< "$sortie")"
     [[ "$empreinte" == "$EMPREINTE_LOCALE" ]]       || warn "$nom : scripts toujours différents de ceux de ce PC après la mise à jour. Le PC leader n'est sans doute pas à jour : y lancer git pull, puis relancer."
   done
