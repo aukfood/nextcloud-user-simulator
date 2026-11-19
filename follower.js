@@ -1,18 +1,20 @@
 /**
- * FOLLOWER (PC2, PC3, ...: même script sur chaque PC supplémentaire, avec sa propre plage USER_FROM/USER_TO)
- * NE CRÉE AUCUN SALON. Lit les URLs créées par le PC1 (logs/rooms.json copié
- * depuis le PC1, ou variable ROOMS_URLS séparée par des virgules), attend qu'elles
- * soient joignables, puis lance ses utilisateurs sur la même chronologie que le PC1.
+ * PC FOLLOWER (même script sur chaque PC follower, avec sa propre plage USER_FROM/USER_TO)
+ * NE CRÉE AUCUN SALON. Lit les URLs créées par le PC leader (logs/rooms.json copié
+ * depuis le PC leader, ou variable ROOMS_URLS séparée par des virgules), attend qu'elles
+ * soient joignables, puis lance ses utilisateurs sur la même chronologie que le PC leader.
  *
  * START_AT doit être IDENTIQUE à celui du leader (sinon les deux PC ne sont pas
  * alignés). Les horloges des deux PC doivent être synchronisées (NTP).
  *
  * Usage:
- *   START_AT=2026-11-03T10:00:00+01:00 USER_FROM=21 USER_TO=40 node pc2-follower.js scenario.json
+ *   START_AT=2026-11-03T10:00:00+01:00 USER_FROM=21 USER_TO=40 node follower.js scenario.json
  *
  * Office seul (pas d'appel): USER_FROM inutile, on répartit les éditeurs par numéros de comptes:
- *   START_AT=2026-11-03T10:00:00+01:00 EDITOR_FROM=11 EDITOR_TO=20 node pc2-follower.js scenario.json
- * (optionnel: copier logs/docs.json du PC1; sans lui, le document est ouvert par clic dans la liste des fichiers)
+ *   START_AT=2026-11-03T10:00:00+01:00 EDITOR_FROM=11 EDITOR_TO=20 node follower.js scenario.json
+ * (optionnel: copier logs/docs.json du PC leader; sans lui, le document est ouvert par clic dans la liste des fichiers)
+ *
+ * Code de sortie: 0 = test complet, 2 = test incomplet (utilisateurs ou éditeurs en échec), 1 = erreur.
  */
 import fs from 'node:fs';
 import * as C from './lib/common.js';
@@ -40,7 +42,7 @@ if (officeOnly && EDITOR_FROM === undefined && EDITOR_TO === undefined) {
 function loadRoomUrls() {
   if (process.env.ROOMS_URLS) return process.env.ROOMS_URLS.split(',');
   if (fs.existsSync('logs/rooms.json')) return JSON.parse(fs.readFileSync('logs/rooms.json', 'utf8')).rooms;
-  log('ERREUR: aucune URL de salon. Copier logs/rooms.json du PC1 ou définir ROOMS_URLS.');
+  log('ERREUR: aucune URL de salon. Copier logs/rooms.json du PC leader ou définir ROOMS_URLS.');
   process.exit(1);
 }
 
@@ -61,7 +63,7 @@ async function waitRoomsReady(page, urls) {
       } catch (e) { lastErr = e.message.split('\n')[0]; await C.sleep(3000); }
     }
     if (!ok) {
-      // Diagnostic: ce que voit réellement le navigateur du PC2
+      // Diagnostic: ce que voit réellement le navigateur du PC follower
       fs.mkdirSync('artifacts', { recursive: true });
       await page.screenshot({ path: 'artifacts/follower-salon-injoignable.png' }).catch(() => {});
       const title = await page.title().catch(() => '?');
@@ -96,7 +98,7 @@ async function waitRoomsReady(page, urls) {
 
   if (!process.env.START_AT) log('ATTENTION: START_AT absent, le follower démarre maintenant: pas aligné avec le leader.');
   const t0 = C.parseStartAt(process.env.START_AT, log) ?? Date.now();
-  await runParticipants({ cfg, from: USER_FROM, to: USER_TO, roomUrls, t0, log, editorFrom: EDITOR_FROM, editorTo: EDITOR_TO });
+  const result = await runParticipants({ cfg, from: USER_FROM, to: USER_TO, roomUrls, t0, log, editorFrom: EDITOR_FROM, editorTo: EDITOR_TO });
   await flushMetrics();
-  process.exit(0);
+  process.exit(result.success ? 0 : 2); // 2 = test incomplet
 })().catch((e) => { log(`ERREUR FATALE: ${e.stack}`); process.exit(1); });

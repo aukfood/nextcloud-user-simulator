@@ -14,7 +14,13 @@ git clone https://github.com/aukfood/nextcloud-user-simulator.git
 cd nextcloud-user-simulator
 ```
 
-Les scripts à lancer sont `pc1-leader.js`, `pc2-follower.js`, `setup.js` et `cleanup.js`. L’édition de documents passe par `lib/office.js`. Le modèle de scénario est `scenario.example.json`.
+Les scripts à lancer sont `conductor.sh`, `leader.js`, `follower.js`, `setup.js` et `cleanup.js`. L’édition de documents passe par `lib/office.js`. Le modèle de scénario est `scenario.example.json`.
+
+Pour une campagne sur plusieurs PC avec `conductor.sh`, installez aussi rsync et le client SSH :
+
+```bash
+sudo apt-get install -y rsync openssh-client
+```
 
 ## 2. Node.js 20 ou plus
 

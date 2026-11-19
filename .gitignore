@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.*
 scenario.json
+conductor.conf
 
 # Sorties de test
 logs/

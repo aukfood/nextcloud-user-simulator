@@ -3,7 +3,7 @@
  *  - désactive l'assistant de première connexion (firstrunwizard), qui masque l'interface
  *    des comptes neufs (désactivable avec "setup": {"disableFirstRunWizard": false})
  *  - crée les utilisateurs et les salons Talk par l'API.
- * (Le leader pc1-leader.js fait la même préparation tout seul: setup.js sert à préparer sans lancer de test.)
+ * (leader.js fait la même préparation tout seul: setup.js sert à préparer sans lancer de test.)
  *   node setup.js scenario.json
  */
 import fs from 'node:fs';

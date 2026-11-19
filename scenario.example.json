@@ -61,7 +61,7 @@
     "roomAccess": "public",
     "_concurrency": "Nombre de créations ou suppressions d'utilisateurs et de salons faites en parallèle par l'API (5 convient, baisse à 2 si le serveur sature)",
     "concurrency": 5,
-    "_autoCleanup": "Nettoyage en fin de test par pc1-leader.js. false ou absent = rien n'est supprimé / ifSuccess = supprime seulement si tout s'est bien passé (sinon on garde pour analyser) / true = supprime toujours. Ignoré si USER_FROM/USER_TO ne couvrent pas tous les utilisateurs (second PC).",
+    "_autoCleanup": "Nettoyage en fin de test par leader.js. false ou absent = rien n'est supprimé / ifSuccess = supprime seulement si tout s'est bien passé (sinon on garde pour analyser) / true = supprime toujours. Ignoré si USER_FROM/USER_TO ne couvrent pas tous les utilisateurs (second PC).",
     "autoCleanup": "ifSuccess",
     "_autoCleanupUsers": "Avec autoCleanup actif: false = supprime les salons et documents mais garde les utilisateurs. Défaut: true",
     "autoCleanupUsers": true,

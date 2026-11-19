@@ -33,7 +33,7 @@ Un utilisateur sans webcam ou sans micro n’envoie vraiment rien sur la piste c
 
 ### Déroulé d’un test
 
-1. **Préparation.** Le script `pc1-leader.js` crée par l’interface de programmation (API) de Nextcloud les comptes `user01`, `user02`…, les salons Talk `loadtest-<date>-1`, `loadtest-<date>-2`… et, si le scénario prévoit de l’édition, les documents `loadtest-doc-01.docx`… dans le dossier `loadtest-docs` du compte admin, partagés en modification avec leurs éditeurs.
+1. **Préparation.** Le script `leader.js` crée par l’interface de programmation (API) de Nextcloud les comptes `user01`, `user02`…, les salons Talk `loadtest-<date>-1`, `loadtest-<date>-2`… et, si le scénario prévoit de l’édition, les documents `loadtest-doc-01.docx`… dans le dossier `loadtest-docs` du compte admin, partagés en modification avec leurs éditeurs.
 2. **Montée en charge.** `user01` arrive à l’instant de départ (`START_AT` s’il est défini, sinon tout de suite), puis un nouvel utilisateur toutes les `joinIntervalSec` secondes. Les utilisateurs sont répartis en alternance entre les salons (`user01` dans le salon 1, `user02` dans le salon 2, etc.).
 3. **Plateau.** Il commence à l’arrivée du dernier utilisateur (ligne `PHASE steady` du journal) et dure `durationSec` secondes. Le partage d’écran et l’édition démarrent `startAtSec` secondes après le début du plateau. En scénario `office`, il n’y a pas d’appel : l’édition démarre `office.startAtSec` secondes après l’instant de départ.
 4. **Fin.** Chaque utilisateur quitte l’appel, les navigateurs sont fermés, puis le nettoyage est fait si `setup.autoCleanup` le demande.
@@ -166,20 +166,21 @@ Renseignez ensuite `scenario.json` (URL, mots de passe, scénario) et créez les
 
 ## Utilisation
 
-### Lancer un test sur un PC
+Pour lancer un test depuis un seul PC :
 
 ```bash
-node pc1-leader.js scenario.json
+node leader.js scenario.json
 ```
 
-Le leader prépare l’instance, lance les utilisateurs, affiche un bilan, puis nettoie si `setup.autoCleanup` le demande. Pour un premier essai, gardez `"autoCleanup": false` afin de pouvoir examiner comptes et salons. Un `Ctrl+C` fait quitter l’appel proprement à chaque utilisateur avant de fermer les navigateurs.
+Le leader prépare l’instance, lance les utilisateurs, affiche un bilan, puis nettoie si `setup.autoCleanup` le demande. Pour un premier essai, gardez `"autoCleanup": false` afin de pouvoir examiner comptes et salons. Un `Ctrl+C` fait quitter l’appel proprement à chaque utilisateur avant de fermer les navigateurs. Pour répartir les utilisateurs sur plusieurs PC, voir « Plusieurs PC ».
 
 ### Les scripts
 
 | Script | Rôle |
 |---|---|
-| `pc1-leader.js` | Prépare l’instance (comptes, salons, documents), écrit `logs/rooms.json` et `logs/docs.json`, puis lance les utilisateurs de sa plage. |
-| `pc2-follower.js` | Sur un PC supplémentaire : ne crée rien, lit les salons préparés par le leader et lance sa plage d’utilisateurs. |
+| `leader.js` | Prépare l’instance (comptes, salons, documents), écrit `logs/rooms.json` et `logs/docs.json`, puis lance les utilisateurs de sa plage. |
+| `follower.js` | Sur un PC supplémentaire : ne crée rien, lit les salons préparés par le leader et lance sa plage d’utilisateurs. |
+| `conductor.sh` | Depuis le PC leader : lance une campagne sur plusieurs PC (copie des fichiers, départ commun, récupération des journaux). |
 | `setup.js` | Prépare l’instance comme le leader, sans lancer de test. |
 | `cleanup.js` | Supprime salons, comptes et documents de test (voir « Nettoyage »). |
 
@@ -207,31 +208,77 @@ ENVEOF
 set -a; source .env; set +a
 ```
 
+`conductor.sh` charge `.env` tout seul, s’il est présent.
+
 ## Plusieurs PC
 
 Un seul PC suffit tant qu’il ne sature pas. Si le journal affiche `ATTENTION: PC de test saturé`, répartissez les utilisateurs sur un PC supplémentaire, sinon les mesures côté serveur sont faussées.
 
-Sur chaque PC : même version de l’outil, mêmes fichiers média, même `scenario.json`, horloge synchronisée par NTP (*Network Time Protocol*) et même `START_AT`. Lancez le leader 2 à 3 minutes avant `START_AT`, le temps de créer comptes et salons.
+Sur chaque PC : même version de l’outil, mêmes fichiers média, même `scenario.json`, horloge synchronisée par NTP (*Network Time Protocol*) et même `START_AT`.
 
-Exemple avec 4 utilisateurs répartis sur deux PC (remplacez l’horaire par un instant futur) :
+### Méthode simple : `conductor.sh`
+
+Depuis le PC leader, une seule commande prépare le test, copie les fichiers sur le ou les PC followers, lance tout le monde à la même heure, puis rapatrie les journaux. Le projet et rsync doivent déjà être installés sur chaque PC (voir [INSTALL.md](INSTALL.md)).
+
+Une seule fois, sur le PC leader, installez l’accès SSH par clé vers chaque PC follower :
 
 ```bash
-# PC1 (leader) : prépare l'instance, puis lance user01 et user02
-START_AT="2026-11-10T15:00:00+01:00" USER_FROM=1 USER_TO=2 node pc1-leader.js scenario.json
+ssh-keygen                                 # seulement si le PC leader n’a pas encore de clé
+ssh-copy-id <UTILISATEUR>@<PC_FOLLOWER>    # à refaire pour chaque PC follower
 ```
 
-Dès que le journal du leader affiche `logs/rooms.json écrit`, copiez ce fichier (et `logs/docs.json` s’il existe) sur le second PC :
+Puis décrivez les PC dans `conductor.conf` :
 
 ```bash
-ssh <UTILISATEUR>@<PC2> "mkdir -p nextcloud-user-simulator/logs"
-scp logs/rooms.json <UTILISATEUR>@<PC2>:nextcloud-user-simulator/logs/
+cp conductor.example.conf conductor.conf
+```
+
+C’est `scenario.json` qui décide du test (type, nombre d’utilisateurs, éditeurs). Adaptez `conductor.conf` en conséquence : il indique seulement quel PC lance quelle partie. Des exemples selon le type de scénario figurent dans `conductor.example.conf`.
+
+Une ligne par PC : la machine (`leader` pour le PC leader), le dossier du projet, puis la plage d’utilisateurs. Exemple pour 4 utilisateurs :
+
+```
+leader                        -                          1 2
+<UTILISATEUR>@<PC_FOLLOWER>   nextcloud-user-simulator   3 4
+```
+
+Lancez la campagne :
+
+```bash
+./conductor.sh --dry-run    # affiche ce qui serait fait, sans rien lancer
+./conductor.sh              # lance la campagne (départ dans environ 3 minutes)
+./conductor.sh --delai 240  # départ dans 4 minutes
+```
+
+Pour un départ à une heure fixe (par exemple pour qu’un collègue observe Grafana à une heure convenue) :
+
+```bash
+./conductor.sh --start-at 2026-11-20T15:00:00+01:00   # fuseau obligatoire
+```
+
+Le script vérifie chaque PC, copie `scenario.json`, `.env` et `logs/rooms.json`, fixe un départ commun, puis récupère les journaux du ou des PC followers dans `logs/<pc>/`. Le journal de chaque follower distant est `logs/conductor-follower.out` sur son PC. Ajoutez `--medias` pour copier aussi le dossier des médias : c’est nécessaire la première fois, car si les médias manquent ou diffèrent sur un PC, le script s’arrête avant de lancer quoi que ce soit. Ajoutez `--maj` pour mettre d’abord à jour le projet sur le ou les PC followers (`git pull`, avec l’utilisateur SSH de `conductor.conf`, jamais en root) ; mettez à jour le PC leader vous-même avant. À la fin, le script nettoie comme `leader.js`, selon `setup.autoCleanup` (avec `"ifSuccess"`, seulement si le test est complet sur tous les PC) ; ajoutez `--no-cleanup` pour garder les données. Les codes de fin sont 0 (complet), 2 (incomplet) et 1 (erreur). Un `Ctrl+C` arrête tout, sans nettoyage. Aide : `./conductor.sh --help`.
+
+### Méthode manuelle
+
+Exemple avec 4 utilisateurs répartis sur deux PC. Remplacez l'horaire par un instant futur et lancez le leader 2 à 3 minutes avant `START_AT`, le temps de créer comptes et salons :
+
+```bash
+# PC leader : prépare l'instance, puis lance user01 et user02
+START_AT="2026-11-10T15:00:00+01:00" USER_FROM=1 USER_TO=2 node leader.js scenario.json
+```
+
+Dès que le journal du leader affiche `logs/rooms.json écrit`, copiez ce fichier (et `logs/docs.json` s’il existe) sur chaque PC follower :
+
+```bash
+ssh <UTILISATEUR>@<PC_FOLLOWER> "mkdir -p nextcloud-user-simulator/logs"
+scp logs/rooms.json <UTILISATEUR>@<PC_FOLLOWER>:nextcloud-user-simulator/logs/
 # Si le scénario comporte de l'édition :
-scp logs/docs.json <UTILISATEUR>@<PC2>:nextcloud-user-simulator/logs/
+scp logs/docs.json <UTILISATEUR>@<PC_FOLLOWER>:nextcloud-user-simulator/logs/
 ```
 
 ```bash
-# PC2 (follower) : même START_AT, plage complémentaire
-START_AT="2026-11-10T15:00:00+01:00" USER_FROM=3 USER_TO=4 node pc2-follower.js scenario.json
+# PC follower : même START_AT, plage complémentaire
+START_AT="2026-11-10T15:00:00+01:00" USER_FROM=3 USER_TO=4 node follower.js scenario.json
 ```
 
 Règles à respecter :

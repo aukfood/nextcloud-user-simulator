@@ -1,22 +1,26 @@
 /**
- * PC1 - LEADER (autonome)
+ * PC LEADER (autonome)
  * Crée utilisateurs et salons par l'API Nextcloud (lib/provision.js), puis lance la plage d'utilisateurs USER_FROM..USER_TO
- * (par défaut 1..totalUsers). Peut tourner seul, ou avec un follower (PC2).
+ * (par défaut 1..totalUsers). Peut tourner seul, ou avec un ou plusieurs PC followers.
  *
  * IMPORTANT: START_AT = instant d'arrivée de user01. Utilisateurs et salons sont créés AVANT
  * cet instant: lancer donc le leader 2-3 minutes avant START_AT.
  * Identifiants: bloc "credentials" de scenario.json.
  *
  * Usage:
- *   node pc1-leader.js scenario.json
- *   START_AT=2026-11-03T10:00:00 USER_FROM=1 USER_TO=20 node pc1-leader.js scenario.json
+ *   node leader.js scenario.json
+ *   START_AT=2026-11-03T10:00:00 USER_FROM=1 USER_TO=20 node leader.js scenario.json
  *   (START_AT avec fuseau: 2026-11-03T10:00:00+01:00 ou ...Z)
+ *
+ * Code de sortie: 0 = test complet, 2 = test incomplet (utilisateurs ou éditeurs en échec), 1 = erreur.
+ * conductor.sh s'en sert pour décider du nettoyage automatique.
  */
 import fs from 'node:fs';
 import * as C from './lib/common.js';
 import { markPhase, writeRunInfo, flushMetrics } from './lib/metrics.js';
 import { runParticipants } from './lib/runner.js';
 import { provision, cleanup } from './lib/provision.js';
+import { officePlan } from './lib/office.js';
 
 const cfg = JSON.parse(fs.readFileSync(process.argv[2] || 'scenario.json', 'utf8'));
 C.applyCredentials(cfg);
@@ -29,8 +33,16 @@ const EDITOR_FROM = process.env.EDITOR_FROM ? parseInt(process.env.EDITOR_FROM, 
 const EDITOR_TO = process.env.EDITOR_TO ? parseInt(process.env.EDITOR_TO, 10) : undefined;
 
 (async () => {
-  log(`Ce PC lance les utilisateurs ${USER_FROM} à ${USER_TO} sur ${cfg.totalUsers}.`
-    + (USER_TO === cfg.totalUsers && USER_FROM === 1 ? ' Si un follower (PC2) est utilisé, définir USER_TO ici pour ne pas doubler ses utilisateurs.' : ''));
+  if (C.scenarioType(cfg) === 'office') {
+    // Office seul: pas d'appel, on annonce les éditeurs (comptes 1..documents x editorsPerDocument)
+    const nbEditors = officePlan(cfg).total;
+    const eFrom = EDITOR_FROM ?? 1, eTo = EDITOR_TO ?? nbEditors;
+    log(`Ce PC lance les éditeurs ${eFrom} à ${eTo} sur ${nbEditors}.`
+      + (eFrom === 1 && eTo === nbEditors ? ' Si un PC follower est utilisé, définir EDITOR_TO ici pour ne pas doubler ses éditeurs.' : ''));
+  } else {
+    log(`Ce PC lance les utilisateurs ${USER_FROM} à ${USER_TO} sur ${cfg.totalUsers}.`
+      + (USER_TO === cfg.totalUsers && USER_FROM === 1 ? ' Si un PC follower est utilisé, définir USER_TO ici pour ne pas doubler ses utilisateurs.' : ''));
+  }
   C.assertFiles(C.requiredMedia(cfg, USER_FROM, USER_TO), log);
   writeRunInfo({ role: 'leader', cfg, userFrom: USER_FROM, userTo: USER_TO, turnMode: C.turnMode(cfg), turnTransport: C.turnTransport(cfg), scenarioType: C.scenarioType(cfg) });
   markPhase('setup', { role: 'leader', turnMode: C.turnMode(cfg), turnTransport: C.turnTransport(cfg), scenarioType: C.scenarioType(cfg) }, log);
@@ -62,7 +74,8 @@ const EDITOR_TO = process.env.EDITOR_TO ? parseInt(process.env.EDITOR_TO, 10) : 
   const mode = cfg.setup?.autoCleanup ?? false;
   const fullRange = USER_FROM === 1 && USER_TO === cfg.totalUsers && EDITOR_FROM === undefined && EDITOR_TO === undefined;
   if (mode && !fullRange) {
-    log('Auto-nettoyage ignoré: ce PC ne lance qu\'une partie des utilisateurs ou des éditeurs (un autre PC utilise les salons ou les documents). Lancer ensuite: node cleanup.js scenario.json');
+    log('Auto-nettoyage ignoré: ce PC ne lance qu\'une partie des utilisateurs ou des éditeurs (un autre PC utilise les salons ou les documents). '
+      + 'Avec conductor.sh: nettoyage fait à la fin par conductor.sh, selon setup.autoCleanup. Sans conductor.sh, lancer ensuite: node cleanup.js scenario.json');
   } else if (mode === true || (mode === 'ifSuccess' && result.success)) {
     markPhase('cleanup', {}, log);
     try {
@@ -76,5 +89,5 @@ const EDITOR_TO = process.env.EDITOR_TO ? parseInt(process.env.EDITOR_TO, 10) : 
     log('Nettoyage automatique désactivé (setup.autoCleanup). Pour supprimer : node cleanup.js scenario.json');
   }
   await flushMetrics();
-  process.exit(0);
+  process.exit(result.success ? 0 : 2); // 2 = test incomplet
 })().catch((e) => { log(`ERREUR FATALE: ${e.stack}`); process.exit(1); });
