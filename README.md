@@ -247,7 +247,7 @@ Lancez la campagne :
 ```bash
 ./conductor.sh --dry-run    # affiche ce qui serait fait, sans rien lancer
 ./conductor.sh              # lance la campagne (départ dans environ 3 minutes)
-./conductor.sh --delai 240  # départ dans 4 minutes
+./conductor.sh --delay 240  # départ dans 4 minutes
 ```
 
 Pour un départ à une heure fixe (par exemple pour qu’un collègue observe Grafana à une heure convenue) :
@@ -256,7 +256,7 @@ Pour un départ à une heure fixe (par exemple pour qu’un collègue observe Gr
 ./conductor.sh --start-at 2026-11-20T15:00:00+01:00   # fuseau obligatoire
 ```
 
-Le script vérifie chaque PC, copie `scenario.json`, `.env` et `logs/rooms.json`, fixe un départ commun, puis récupère les journaux du ou des PC followers dans `logs/<pc>/`. Le journal de chaque follower distant est `logs/conductor-follower.out` sur son PC. Ajoutez `--medias` pour copier aussi le dossier des médias : c’est nécessaire la première fois, car si les médias manquent ou diffèrent sur un PC, le script s’arrête avant de lancer quoi que ce soit. Ajoutez `--maj` pour mettre d’abord à jour le projet sur le ou les PC followers (`git pull`, avec l’utilisateur SSH de `conductor.conf`, jamais en root) ; mettez à jour le PC leader vous-même avant. À la fin, le script nettoie comme `leader.js`, selon `setup.autoCleanup` (avec `"ifSuccess"`, seulement si le test est complet sur tous les PC) ; ajoutez `--no-cleanup` pour garder les données. Les codes de fin sont 0 (complet), 2 (incomplet) et 1 (erreur). Un `Ctrl+C` arrête tout, sans nettoyage. Aide : `./conductor.sh --help`.
+Le script vérifie chaque PC, copie `scenario.json`, `.env` et `logs/rooms.json`, fixe un départ commun, puis récupère les journaux du ou des PC followers dans `logs/<pc>/`. Le journal de chaque follower distant est `logs/conductor-follower.out` sur son PC. Ajoutez `--media` pour copier aussi le dossier des médias : c’est nécessaire la première fois, car si les médias manquent ou diffèrent sur un PC, le script s’arrête avant de lancer quoi que ce soit. Ajoutez `--update` pour mettre d’abord à jour le projet sur le ou les PC followers (`git pull`, avec l’utilisateur SSH de `conductor.conf`, jamais en root) ; mettez à jour le PC leader vous-même avant. À la fin, le script nettoie comme `leader.js`, selon `setup.autoCleanup` (avec `"ifSuccess"`, seulement si le test est complet sur tous les PC) ; ajoutez `--no-cleanup` pour garder les données. Les codes de fin sont 0 (complet), 2 (incomplet) et 1 (erreur). Un `Ctrl+C` arrête tout, sans nettoyage. Aide : `./conductor.sh --help`.
 
 ### Méthode manuelle
 

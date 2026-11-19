@@ -39,10 +39,10 @@ Ouvrez le dernier journal dans `logs/`, cherchez la **première** ligne `ERREUR`
 | Symptôme | Cause | Solution |
 |---|---|---|
 | `rsync introuvable` | `rsync` absent du PC leader ou d’un PC follower. `conductor.sh` en a besoin sur chaque PC. | Installer rsync sur chaque PC : `sudo apt install rsync`. |
-| `follower.js absent` | Dossier du projet inexact dans `conductor.conf`, ou projet non installé / pas à jour sur ce PC. | Vérifier le dossier dans `conductor.conf` et l’installation ([INSTALL.md](INSTALL.md)). Mettre à jour ce PC (`git pull` ou `./conductor.sh --maj`). |
-| Médias absents ou différents (avec `conductor.sh`) | Les fichiers de `mediaDir` manquent ou diffèrent sur un PC distant. | Relancer `./conductor.sh` avec `--medias` pour copier le dossier des médias. |
+| `follower.js absent` | Dossier du projet inexact dans `conductor.conf`, ou projet non installé / pas à jour sur ce PC. | Vérifier le dossier dans `conductor.conf` et l’installation ([INSTALL.md](INSTALL.md)). Mettre à jour ce PC (`git pull` ou `./conductor.sh --update`). |
+| Médias absents ou différents (avec `conductor.sh`) | Les fichiers de `mediaDir` manquent ou diffèrent sur un PC distant. | Relancer `./conductor.sh` avec `--media` pour copier le dossier des médias. |
 | `ERREUR: aucune URL de salon` ou `ERREUR: salon injoignable après 120 s` | `logs/rooms.json` absent ou périmé sur le follower (leader relancé depuis). | Copier le `rooms.json` du dernier lancement du leader. Voir les lignes `DIAGNOSTIC` et `artifacts/follower-salon-injoignable.png`. Avec `conductor.sh`, le script copie `rooms.json` tout seul. |
-| Les PC ne démarrent pas ensemble, ou utilisateurs en double | `START_AT` absent ou sans fuseau, horloges non synchronisées, plages `USER_*` / `EDITOR_*` qui se chevauchent. | Même `START_AT` avec fuseau partout, horloges synchronisées par NTP, plages complémentaires. Avec `conductor.sh`, le départ est donné par `--delai` (défaut 180 s) ou, pour une heure convenue, par `--start-at` avec le fuseau. |
+| Les PC ne démarrent pas ensemble, ou utilisateurs en double | `START_AT` absent ou sans fuseau, horloges non synchronisées, plages `USER_*` / `EDITOR_*` qui se chevauchent. | Même `START_AT` avec fuseau partout, horloges synchronisées par NTP, plages complémentaires. Avec `conductor.sh`, le départ est donné par `--delay` (défaut 180 s) ou, pour une heure convenue, par `--start-at` avec le fuseau. |
 
 ## Charge du PC de test et nettoyage
 

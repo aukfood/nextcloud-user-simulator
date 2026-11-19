@@ -12,7 +12,7 @@ cd "$(dirname "$(readlink -f "$0")")"
 CONF="conductor.conf"
 SCENARIO="scenario.json"
 DELAI=180            # secondes entre le lancement et START_AT (création des comptes et salons comprise)
-START_AT_FORCE=""     # heure imposée par --start-at, prioritaire sur --delai
+START_AT_FORCE=""     # heure imposée par --start-at, prioritaire sur --delay
 COPIER_MEDIAS=0
 MAJ=0
 NETTOYAGE=1          # 0 avec --no-cleanup
@@ -33,11 +33,11 @@ départ synchronisé des followers, puis récupération des journaux.
 Options :
   -c, --conf FICHIER      liste des PC (défaut : conductor.conf, modèle : conductor.example.conf)
   -s, --scenario FICHIER  fichier de scénario (défaut : scenario.json)
-  -d, --delai SECONDES    délai avant le départ commun (défaut : 180, minimum 90)
+  -d, --delay SECONDES    délai avant le départ commun (défaut : 180, minimum 90)
       --start-at DATE     cas particulier : départ à une heure fixe, avec fuseau
-                          (ex. 2026-11-20T15:00:00+01:00) ; prioritaire sur --delai
-      --medias            copier aussi le dossier des médias (nécessaire s'ils manquent ou diffèrent)
-      --maj               mettre à jour le projet des PC distants (git pull --ff-only)
+                          (ex. 2026-11-20T15:00:00+01:00) ; prioritaire sur --delay
+      --media             copier aussi le dossier des médias (nécessaire s'ils manquent ou diffèrent)
+      --update            mettre à jour le projet des PC distants (git pull --ff-only)
                           avec l'utilisateur SSH de conductor.conf (jamais root).
                           Le PC leader n'est pas mis à jour : y faire git pull à la main avant.
       --no-cleanup        ne pas nettoyer à la fin, même si setup.autoCleanup le demande
@@ -70,10 +70,10 @@ while (( $# )); do
   case "$1" in
     -c|--conf)      CONF="${2:?--conf attend un fichier}"; shift 2 ;;
     -s|--scenario)  SCENARIO="${2:?--scenario attend un fichier}"; shift 2 ;;
-    -d|--delai)     DELAI="${2:?--delai attend un nombre de secondes}"; shift 2 ;;
+    -d|--delay)     DELAI="${2:?--delay attend un nombre de secondes}"; shift 2 ;;
     --start-at)     START_AT_FORCE="${2:?--start-at attend une date}"; shift 2 ;;
-    --medias)       COPIER_MEDIAS=1; shift ;;
-    --maj)          MAJ=1; shift ;;
+    --media)        COPIER_MEDIAS=1; shift ;;
+    --update)       MAJ=1; shift ;;
     --no-cleanup)   NETTOYAGE=0; shift ;;
     --dry-run)      DRY_RUN=1; shift ;;
     -h|--help)      usage; exit 0 ;;
@@ -81,8 +81,8 @@ while (( $# )); do
   esac
 done
 
-[[ "$DELAI" =~ ^[0-9]+$ ]] || fatal "--delai doit être un nombre de secondes"
-(( DELAI >= 90 )) || fatal "--delai trop court ($DELAI s) : prévoir au moins 90 s pour la préparation"
+[[ "$DELAI" =~ ^[0-9]+$ ]] || fatal "--delay doit être un nombre de secondes"
+(( DELAI >= 90 )) || fatal "--delay trop court ($DELAI s) : prévoir au moins 90 s pour la préparation"
 
 command -v node  >/dev/null || fatal "Node.js introuvable sur ce PC (voir INSTALL.md)"
 command -v ssh   >/dev/null || fatal "ssh introuvable sur ce PC (paquet openssh-client)"
@@ -254,16 +254,16 @@ for i in "${!CIBLES[@]}"; do
   h="$(val horloge)"; ecart=$(( ${h:-0} - $(date +%s) )); ecart=${ecart#-}
   (( ecart <= 2 )) || warn "$nom : horloge décalée de ${ecart} s par rapport à ce PC. Vérifier la synchronisation NTP."
   if (( ! MAJ )) && [[ "$(val empreinte)" != "$EMPREINTE_LOCALE" ]]; then
-    warn "$nom : scripts différents de ceux de ce PC. Mettre à jour le projet sur $cible (git pull), ou relancer avec --maj."
+    warn "$nom : scripts différents de ceux de ce PC. Mettre à jour le projet sur $cible (git pull), ou relancer avec --update."
   fi
   # Médias absents ou différents : arrêter avant tout lancement (le follower refuserait de démarrer).
   if (( ! COPIER_MEDIAS )) && [[ -n "$MEDIAS_HASH" ]]; then
-    [[ "$(val medias)" == "$MEDIAS_HASH" ]] || fatal "$nom : médias absents ou différents dans $MEDIA_DIR sur $cible. Relancer avec --medias pour les copier. Rien n'a été lancé."
+    [[ "$(val medias)" == "$MEDIAS_HASH" ]] || fatal "$nom : médias absents ou différents dans $MEDIA_DIR sur $cible. Relancer avec --media pour les copier. Rien n'a été lancé."
   fi
   info "  $nom : OK (Node $(val node))"
 done
 
-# Mise à jour des PC distants (--maj). Lancée par SSH avec l'utilisateur de conductor.conf :
+# Mise à jour des PC distants (--update). Lancée par SSH avec l'utilisateur de conductor.conf :
 # jamais de root ni de sudo. Git ne doit rien demander (pas de mot de passe interactif).
 GIT_SANS_QUESTION='export GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes"; '
 # Masquer un éventuel identifiant dans une URL affichée par git (https://identifiant@serveur).
@@ -282,7 +282,7 @@ if (( MAJ )); then
     rc=0; sortie="$(distant "$i" "$verif" 2>&1)" || rc=$?
     case "$rc" in
       0)  ;;
-      10) fatal "$nom : ${DOSSIERS[$i]} n'est pas un dépôt git sur $cible. Le réinstaller avec git clone (voir INSTALL.md) ou lancer sans --maj. Rien n'a été lancé." ;;
+      10) fatal "$nom : ${DOSSIERS[$i]} n'est pas un dépôt git sur $cible. Le réinstaller avec git clone (voir INSTALL.md) ou lancer sans --update. Rien n'a été lancé." ;;
       11) fatal "$nom : modifications locales dans ${DOSSIERS[$i]} sur $cible :
 $sortie
 Les enregistrer ou les annuler sur ce PC (git status), puis relancer. Rien n'a été lancé." ;;
@@ -334,7 +334,7 @@ for i in "${!CIBLES[@]}"; do
   (( ${#fichiers[@]} )) && envoyer "$i" "" 600 "${fichiers[@]}"
   if (( COPIER_MEDIAS )); then
     [[ -d "$MEDIA_DIR" ]] || fatal "dossier des médias $MEDIA_DIR introuvable sur ce PC"
-    [[ "$MEDIA_DIR" != /* ]] || fatal "--medias : mediaDir doit être un chemin relatif au projet (ex. ./media)"
+    [[ "$MEDIA_DIR" != /* ]] || fatal "--media : mediaDir doit être un chemin relatif au projet (ex. ./media)"
     info "Copie des médias ($MEDIA_DIR) vers ${NOMS[$i]} (long au premier envoi)"
     parent="$(dirname "$MEDIA_DIR")"
     distant "$i" "$(printf 'mkdir -p %q' "$parent")"
@@ -407,7 +407,7 @@ else
     kill -0 "$LEADER_PID" 2>/dev/null || { wait "$LEADER_PID" || true; fatal "le leader s'est arrêté pendant la préparation (voir son journal dans logs/)"; }
     if (( $(date +%s) >= depart - MARGE_FOLLOWER )); then
       kill -TERM "$LEADER_PID" 2>/dev/null || true
-      fatal "préparation trop longue : START_AT trop proche. Relancer avec un délai plus grand (ex. --delai $((DELAI + 120))), puis nettoyer : node cleanup.js $SCENARIO"
+      fatal "préparation trop longue : START_AT trop proche. Relancer avec un délai plus grand (ex. --delay $((DELAI + 120))), puis nettoyer : node cleanup.js $SCENARIO"
     fi
     sleep 2
   done
