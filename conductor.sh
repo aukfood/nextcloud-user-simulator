@@ -478,6 +478,10 @@ while :; do
   (( restants == 0 )) && break
   if (( $(date +%s) >= fin_max )); then
     warn "$restants follower(s) toujours en cours après $ATTENTE_FIN_MAX s : journaux récupérés sans les attendre"
+    for i in "${LANCES[@]}"; do
+      [[ -n "${RESULTAT[$i]:-}" ]] && continue
+      warn "  ${NOMS[$i]} : follower encore actif. L'arrêter si besoin : ssh ${CIBLES[$i]} 'kill -TERM -- -${PID_DISTANT[$i]}'"
+    done
     break
   fi
   sleep "$INTERVALLE"
